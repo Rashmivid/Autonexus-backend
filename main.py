@@ -30,11 +30,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from database import engine, Base, get_db
-from models import Vehicle, ServiceBooking, Feedback
+from models import Vehicle, ServiceBooking, Feedback,User
 from schema import (
     VehicleCreate, VehicleUpdate, VehicleResponse,
     ServiceBookRequest, ServiceCompleteRequest,
-    ServiceBookingResponse, FeedbackSubmitRequest, FeedbackResponse,
+    ServiceBookingResponse, FeedbackSubmitRequest, FeedbackResponse,UserRegister, UserLogin,
 )
 from state_manager import StateManager
 from agents.master_agent import MasterAgent
@@ -1554,3 +1554,70 @@ def _prepopulate_ueba():
 
 _apply_ueba_patch()
 _prepopulate_ueba()
+# ── AUTH ─────────────────────────────────────────────────────────────────────
+import bcrypt as _bcrypt
+
+def hash_password(password: str) -> str:
+    return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
+
+def verify_password(password: str, hashed: str) -> bool:
+    return _bcrypt.checkpw(password.encode(), hashed.encode())
+JWT_SECRET = os.getenv("JWT_SECRET", "autonexus-secret-key")
+
+@app.post("/auth/register")
+def register(req: UserRegister, db: Session = Depends(get_db)):
+    if db.query(User).filter(User.email == req.email).first():
+        raise HTTPException(400, "Email already registered")
+    user = User(
+        name=req.name,
+        email=req.email,
+        password_hash=hash_password(req.password),   # ← changed
+        company_name=req.company_name
+    )
+    db.add(user); db.commit()
+    import jwt as pyjwt
+    token = pyjwt.encode({"user_id": user.id, "email": user.email}, JWT_SECRET, algorithm="HS256")
+    return {"token": token, "user": {"name": user.name, "email": user.email, "company": user.company_name}}
+
+@app.post("/auth/login")
+def login(req: UserLogin, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == req.email).first()
+    if not user or not verify_password(req.password, user.password_hash):   # ← changed
+        raise HTTPException(401, "Invalid credentials")
+    import jwt as pyjwt
+    token = pyjwt.encode({"user_id": user.id, "email": user.email}, JWT_SECRET, algorithm="HS256")
+    return {"token": token, "user": {"name": user.name, "email": user.email, "company": user.company_name}}
+@app.get("/auth/users")
+def get_all_users(db: Session = Depends(get_db)):
+    """View all registered operators — for admin/recording purposes."""
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    return {
+        "total": len(users),
+        "users": [
+            {
+                "id": u.id,
+                "name": u.name,
+                "email": u.email,
+                "company": u.company_name,
+                "role": u.role,
+                "registered_at": u.created_at.isoformat() if u.created_at else None,
+                "last_login": u.last_login.isoformat() if u.last_login else "Never",
+                "login_count": u.login_count or 0,
+            }
+            for u in users
+        ]
+    }
+@app.get("/vehicles/{vehicle_id}/ai-explanation")
+def get_ai_explanation(vehicle_id: str, db: Session = Depends(get_db)):
+    v = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+    if not v:
+        raise HTTPException(404, "Vehicle not found")
+    from gemini_advisor import explain_prediction
+    explanation = explain_prediction(
+        vehicle_id=vehicle_id,
+        sensors={"brake_temp": v.brake_temp, "oil_pressure": v.oil_pressure,
+                 "engine_temp": v.engine_temp, "brake_fluid": v.brake_fluid_level},
+        risk_level=v.status,
+        days_to_failure=7 if v.status == "critical" else 30
+    )
+    return {"vehicle_id": vehicle_id, "explanation": explanation, "status": v.status}

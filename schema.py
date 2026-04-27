@@ -128,3 +128,14 @@ class FeedbackResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# ADD these Pydantic models
+class UserRegister(BaseModel):
+    name: str
+    email: str
+    password: str
+    company_name: str
+
+class UserLogin(BaseModel):
+    email: str
+    password: str

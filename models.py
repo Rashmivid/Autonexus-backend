@@ -6,7 +6,20 @@ Adds: owner columns to Vehicle, ServiceBooking table, Feedback table
 from sqlalchemy import Column, Integer, String, Float, DateTime, Text, JSON
 from database import Base
 from datetime import datetime, timezone
+import uuid
 
+# ADD at the top of models.py
+class User(Base):
+    __tablename__ = "users"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String)
+    email = Column(String, unique=True)
+    password_hash = Column(String)
+    company_name = Column(String)
+    role = Column(String, default="fleet_manager")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)   # ADD THIS
+    login_count = Column(Integer, default=0)        # ADD THIS
 
 class Vehicle(Base):
     __tablename__ = "vehicles"
