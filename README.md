@@ -47,7 +47,7 @@ cp .env.example .env
 Edit `.env` with your credentials:
 
 ```env
-DATABASE_URL=sqlite:///./autonexus.db      # or postgresql://user:pass@localhost/autonexus
+DATABASE_URL=sqlite:///./autonexus.db      
 TWILIO_ACCOUNT_SID=your_sid
 TWILIO_AUTH_TOKEN=your_token
 TWILIO_PHONE_NUMBER=+1xxxxxxxxxx
